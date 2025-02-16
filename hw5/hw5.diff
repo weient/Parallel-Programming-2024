@@ -1,0 +1,256 @@
+[1mdiff --git a/examples/ucp_hello_world.c b/examples/ucp_hello_world.c[m
+[1mindex d07dd47..0e24a93 100644[m
+[1m--- a/examples/ucp_hello_world.c[m
+[1m+++ b/examples/ucp_hello_world.c[m
+[36m@@ -560,6 +560,8 @@[m [mint main(int argc, char **argv)[m
+     status = ucp_config_read(NULL, NULL, &config);[m
+     CHKERR_JUMP(status != UCS_OK, "ucp_config_read\n", err);[m
+ [m
+[32m+[m
+[32m+[m[32m    // NOTE: setting ucp params[m
+     ucp_params.field_mask   = UCP_PARAM_FIELD_FEATURES |[m
+                               UCP_PARAM_FIELD_REQUEST_SIZE |[m
+                               UCP_PARAM_FIELD_REQUEST_INIT |[m
+[36m@@ -572,8 +574,13 @@[m [mint main(int argc, char **argv)[m
+     ucp_params.request_init    = request_init;[m
+     ucp_params.name            = "hello_world";[m
+ [m
+[32m+[m[41m    [m
+[32m+[m
+[32m+[m
+[32m+[m[32m    // NOTE: initialize ucp context (process) based on input config / ucp param.[m
+     status = ucp_init(&ucp_params, config, &ucp_context);[m
+ [m
+[32m+[m[32m    // NOTE: print input config[m
+     if (print_config) {[m
+         ucp_config_print(config, stdout, NULL, UCS_CONFIG_PRINT_CONFIG);[m
+     }[m
+[36m@@ -581,27 +588,34 @@[m [mint main(int argc, char **argv)[m
+     ucp_config_release(config);[m
+     CHKERR_JUMP(status != UCS_OK, "ucp_init\n", err);[m
+ [m
+[32m+[m[32m    // NOTE: setting worker param[m
+     worker_params.field_mask  = UCP_WORKER_PARAM_FIELD_THREAD_MODE;[m
+     worker_params.thread_mode = UCS_THREAD_MODE_SINGLE;[m
+ [m
+[32m+[m[32m    // NOTE: create worker based on context info / worker param[m
+     status = ucp_worker_create(ucp_context, &worker_params, &ucp_worker);[m
+     CHKERR_JUMP(status != UCS_OK, "ucp_worker_create\n", err_cleanup);[m
+ [m
+     worker_attr.field_mask = UCP_WORKER_ATTR_FIELD_ADDRESS;[m
+ [m
+[32m+[m[32m    // NOTE: get worker's network addr?[m
+     status = ucp_worker_query(ucp_worker, &worker_attr);[m
+     CHKERR_JUMP(status != UCS_OK, "ucp_worker_query\n", err_worker);[m
+     local_addr_len = worker_attr.address_length;[m
+     local_addr     = worker_attr.address;[m
+ [m
+[32m+[m[32m    // NOTE: print local addr[m
+     printf("[0x%x] local address length: %lu\n",[m
+            (unsigned int)pthread_self(), local_addr_len);[m
+ [m
+     /* OOB connection establishment */[m
+[32m+[m[32m    // NOTE: Client[m
+     if (client_target_name != NULL) {[m
+[32m+[m[32m        // NOTE: socket connection to server[m
+         oob_sock = connect_common(client_target_name, server_port, ai_family);[m
+         CHKERR_JUMP(oob_sock < 0, "client_connect\n", err_addr);[m
+ [m
+[32m+[m[32m        // NOTE: get server network addr len[m
+         ret = recv(oob_sock, &peer_addr_len, sizeof(peer_addr_len), MSG_WAITALL);[m
+         CHKERR_JUMP_RETVAL(ret != (int)sizeof(peer_addr_len),[m
+                            "receive address length\n", err_addr, ret);[m
+[36m@@ -609,17 +623,22 @@[m [mint main(int argc, char **argv)[m
+         peer_addr = malloc(peer_addr_len);[m
+         CHKERR_JUMP(!peer_addr, "allocate memory\n", err_addr);[m
+ [m
+[32m+[m[32m        // NOTE: get server network addr[m
+         ret = recv(oob_sock, peer_addr, peer_addr_len, MSG_WAITALL);[m
+         CHKERR_JUMP_RETVAL(ret != (int)peer_addr_len,[m
+                            "receive address\n", err_peer_addr, ret);[m
+[32m+[m[32m    // NOTE: Server[m
+     } else {[m
+[32m+[m[32m        // NOTE: socket connection to client[m
+         oob_sock = connect_common(NULL, server_port, ai_family);[m
+         CHKERR_JUMP(oob_sock < 0, "server_connect\n", err_peer_addr);[m
+ [m
+[32m+[m[32m        // NOTE: send network addr len to client[m
+         ret = send(oob_sock, &local_addr_len, sizeof(local_addr_len), 0);[m
+         CHKERR_JUMP_RETVAL(ret != (int)sizeof(local_addr_len),[m
+                            "send address length\n", err_peer_addr, ret);[m
+[31m-[m
+[32m+[m[41m        [m
+[32m+[m[32m        // NOTE: send network addr to client[m
+         ret = send(oob_sock, local_addr, local_addr_len, 0);[m
+         CHKERR_JUMP_RETVAL(ret != (int)local_addr_len, "send address\n",[m
+                            err_peer_addr, ret);[m
+[1mdiff --git a/src/ucp/core/ucp_context.c b/src/ucp/core/ucp_context.c[m
+[1mindex 304a3fa..4844df8 100644[m
+[1m--- a/src/ucp/core/ucp_context.c[m
+[1m+++ b/src/ucp/core/ucp_context.c[m
+[36m@@ -1054,7 +1054,8 @@[m [mstatic void ucp_add_tl_resource_if_enabled([m
+         context->tl_rscs[context->num_tls].tl_name_csum =[m
+                                   ucs_crc16_string(resource->tl_name);[m
+         context->tl_rscs[context->num_tls].flags        = rsc_flags;[m
+[31m-[m
+[32m+[m[32m        // printf("tl_rsc name: %s\n", resource->tl_name);[m
+[32m+[m[32m        // printf("tl_rsc device: %s\n", resource->dev_name);[m
+         dev_index = 0;[m
+         for (i = 0; i < context->num_tls; ++i) {[m
+             if (ucp_tl_resource_is_same_device(&context->tl_rscs[i].tl_rsc, resource)) {[m
+[36m@@ -1067,6 +1068,7 @@[m [mstatic void ucp_add_tl_resource_if_enabled([m
+         context->tl_rscs[context->num_tls].dev_index = dev_index;[m
+ [m
+         ++context->num_tls;[m
+[32m+[m[32m        // printf("num_tls: %d\n", context->num_tls);[m
+         ++(*num_resources_p);[m
+     }[m
+ }[m
+[1mdiff --git a/src/ucp/core/ucp_ep.c b/src/ucp/core/ucp_ep.c[m
+[1mindex 1c0f16c..c8d6350 100644[m
+[1m--- a/src/ucp/core/ucp_ep.c[m
+[1m+++ b/src/ucp/core/ucp_ep.c[m
+[36m@@ -786,7 +786,6 @@[m [mucs_status_t ucp_ep_init_create_wireup(ucp_ep_h ep, unsigned ep_init_flags,[m
+     } else {[m
+         key.wireup_msg_lane = 0;[m
+     }[m
+[31m-[m
+     status = ucp_worker_get_ep_config(ep->worker, &key, ep_init_flags,[m
+                                       &ep->cfg_index);[m
+     if (status != UCS_OK) {[m
+[1mdiff --git a/src/ucp/core/ucp_worker.c b/src/ucp/core/ucp_worker.c[m
+[1mindex 5adcee9..6882683 100644[m
+[1m--- a/src/ucp/core/ucp_worker.c[m
+[1m+++ b/src/ucp/core/ucp_worker.c[m
+[36m@@ -1759,7 +1759,6 @@[m [mstatic void ucp_worker_add_feature_rsc(ucp_context_h context,[m
+     ucs_string_buffer_rtrim(strb, " ");[m
+     ucs_string_buffer_appendf(strb, ") ");[m
+ }[m
+[31m-[m
+ static void[m
+ ucp_worker_print_used_tls(ucp_worker_h worker, ucp_worker_cfg_index_t cfg_index)[m
+ {[m
+[36m@@ -1777,6 +1776,8 @@[m [mucp_worker_print_used_tls(ucp_worker_h worker, ucp_worker_cfg_index_t cfg_index)[m
+     int amo_emul                    = 0;[m
+     int num_valid_lanes             = 0;[m
+     ucp_lane_index_t lane;[m
+[32m+[m[32m    ucp_config_t *cfg;[m
+[32m+[m[32m    ucs_status_t status;[m
+ [m
+     ucp_ep_config_name(worker, cfg_index, &strb);[m
+ [m
+[36m@@ -1852,6 +1853,15 @@[m [mucp_worker_print_used_tls(ucp_worker_h worker, ucp_worker_cfg_index_t cfg_index)[m
+ [m
+     ucs_string_buffer_rtrim(&strb, "; ");[m
+ [m
+[32m+[m[32m    // mod[m
+[32m+[m[32m    status = ucp_config_read(NULL, NULL, &cfg);[m
+[32m+[m[32m    if (status != UCS_OK) {[m
+[32m+[m[32m        printf("error while reading config in ucp_worker.c print_used_tls function.\n");[m
+[32m+[m[32m    }[m
+[32m+[m[32m    ucp_config_print(cfg, stdout, NULL, UCS_CONFIG_PRINT_TLS);[m
+[32m+[m[32m    ucp_config_release(cfg);[m
+[32m+[m[32m    printf("%s\n", ucs_string_buffer_cstr(&strb));[m
+[32m+[m
+     ucs_info("%s", ucs_string_buffer_cstr(&strb));[m
+ }[m
+ [m
+[1mdiff --git a/src/ucp/wireup/wireup.c b/src/ucp/wireup/wireup.c[m
+[1mindex dfd6330..aed49d9 100644[m
+[1m--- a/src/ucp/wireup/wireup.c[m
+[1m+++ b/src/ucp/wireup/wireup.c[m
+[36m@@ -566,7 +566,6 @@[m [mucp_wireup_process_pre_request(ucp_worker_h worker, ucp_ep_h ep,[m
+                              ucp_ep_err_mode_init_flags(msg->err_mode);[m
+     unsigned addr_indices[UCP_MAX_LANES];[m
+     ucs_status_t status;[m
+[31m-[m
+     UCP_WIREUP_MSG_CHECK(msg, ep, UCP_WIREUP_MSG_PRE_REQUEST);[m
+     ucs_trace("got wireup pre_request from 0x%"PRIx64" src_ep_id 0x%"PRIx64[m
+               " dst_ep_id 0x%"PRIx64" conn_sn %u",[m
+[36m@@ -612,7 +611,6 @@[m [mucp_wireup_process_request(ucp_worker_h worker, ucp_ep_h ep,[m
+     unsigned addr_indices[UCP_MAX_LANES];[m
+     ucs_status_t status;[m
+     int has_cm_lane;[m
+[31m-[m
+     UCP_WIREUP_MSG_CHECK(msg, ep, UCP_WIREUP_MSG_REQUEST);[m
+     ucs_trace("got wireup request from 0x%"PRIx64" src_ep_id 0x%"PRIx64""[m
+               " dst_ep_id 0x%"PRIx64" conn_sn %d", remote_address->uuid,[m
+[36m@@ -833,7 +831,6 @@[m [mucp_wireup_send_ep_removed(ucp_worker_h worker, const ucp_wireup_msg_t *msg,[m
+     ucp_ep_h reply_ep;[m
+     unsigned addr_indices[UCP_MAX_LANES];[m
+     ucs_status_ptr_t req;[m
+[31m-[m
+     /* If endpoint does not exist - create a temporary endpoint to send a[m
+      * UCP_WIREUP_MSG_EP_REMOVED reply */[m
+     status = ucp_ep_create_base(worker, ep_init_flags, remote_address->name,[m
+[36m@@ -923,7 +920,6 @@[m [mstatic ucs_status_t ucp_wireup_msg_handler(void *arg, void *data,[m
+         ucs_error("failed to unpack address: %s", ucs_status_string(status));[m
+         goto out;[m
+     }[m
+[31m-[m
+     if (msg->type == UCP_WIREUP_MSG_ACK) {[m
+         ucs_assert(remote_address.address_count == 0);[m
+         ucp_wireup_process_ack(worker, ep, msg);[m
+[1mdiff --git a/src/ucp/wireup/wireup_cm.c b/src/ucp/wireup/wireup_cm.c[m
+[1mindex 51cc0ef..66bb511 100644[m
+[1m--- a/src/ucp/wireup/wireup_cm.c[m
+[1m+++ b/src/ucp/wireup/wireup_cm.c[m
+[36m@@ -506,7 +506,6 @@[m [mstatic unsigned ucp_cm_client_uct_connect_progress(void *arg)[m
+         ucp_wireup_eps_pending_extract(ep, &tmp_pending_queue);[m
+         ucp_wireup_cm_ep_cleanup(ep);[m
+         ucp_ep_realloc_lanes(ep, key.num_lanes);[m
+[31m-[m
+         status = ucp_worker_get_ep_config(worker, &key, ep_init_flags,[m
+                                           &ep->cfg_index);[m
+         if (status != UCS_OK) {[m
+[1mdiff --git a/src/ucs/config/parser.c b/src/ucs/config/parser.c[m
+[1mindex a13d508..b1a78da 100644[m
+[1m--- a/src/ucs/config/parser.c[m
+[1m+++ b/src/ucs/config/parser.c[m
+[36m@@ -1878,8 +1878,27 @@[m [mvoid ucs_config_parser_print_opts(FILE *stream, const char *title, const void *o[m
+     }[m
+ [m
+     // TODO: PP-HW-UCX[m
+[31m-    if (flags /*& UCS_CONFIG_PRINT_TLS*/) {[m
+[31m-[m
+[32m+[m[32m    // mod[m
+[32m+[m[32m    if (flags & UCS_CONFIG_PRINT_TLS) {[m
+[32m+[m
+[32m+[m[32m        printf("UCX_TLS=");[m
+[32m+[m[32m        for (; !ucs_config_field_is_last(fields); ++fields) {[m
+[32m+[m[32m            if (strcmp(fields->name, "TLS") == 0) {[m
+[32m+[m[32m                ucs_config_allow_list_t *tls = (ucs_config_allow_list_t*)((char*)opts + fields->offset);[m
+[32m+[m
+[32m+[m[32m                if (tls->mode == UCS_CONFIG_ALLOW_LIST_ALLOW_ALL) {[m
+[32m+[m[32m                    printf("all\n");[m
+[32m+[m[32m                } else {[m
+[32m+[m[32m                    ucs_config_names_array_t *array = &tls->array;[m
+[32m+[m[32m                    for (unsigned i = 0; i < array->count; i++) {[m
+[32m+[m[32m                        if (i > 0) printf(",");[m
+[32m+[m[32m                        printf("%s", array->names[i]);[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                    printf("\n");[m
+[32m+[m[32m                }[m
+[32m+[m[32m                break;[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+     }[m
+ [m
+     if (flags & UCS_CONFIG_PRINT_HEADER) {[m
+[1mdiff --git a/src/ucs/config/types.h b/src/ucs/config/types.h[m
+[1mindex c300a6b..a365d8a 100644[m
+[1m--- a/src/ucs/config/types.h[m
+[1m+++ b/src/ucs/config/types.h[m
+[36m@@ -90,9 +90,10 @@[m [mtypedef enum {[m
+     UCS_CONFIG_PRINT_HEADER          = UCS_BIT(1),[m
+     UCS_CONFIG_PRINT_DOC             = UCS_BIT(2),[m
+     UCS_CONFIG_PRINT_HIDDEN          = UCS_BIT(3),[m
+[31m-    UCS_CONFIG_PRINT_COMMENT_DEFAULT = UCS_BIT(4)[m
+[32m+[m[32m    UCS_CONFIG_PRINT_COMMENT_DEFAULT = UCS_BIT(4),[m
+[32m+[m[32m    UCS_CONFIG_PRINT_TLS             = UCS_BIT(5)[m
+ } ucs_config_print_flags_t;[m
+[31m-[m
+[32m+[m[32m// mod[m
+ [m
+ /**[m
+  * Structure type for array configuration. Should be used inside the configuration[m
