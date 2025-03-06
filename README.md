@@ -2,6 +2,11 @@
 
 This repository contains implementations of various parallel programming assignments focusing on different parallelization techniques and frameworks.
 
+## Course Performance
+- **Final Grade**: A+
+- **Class Ranking**: 1st out of 105 students
+
+
 ## Projects Overview
 
 ### HW1: Odd-Even Sort using MPI
