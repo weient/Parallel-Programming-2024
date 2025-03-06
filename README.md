@@ -9,7 +9,7 @@ This repository contains implementations of various parallel programming assignm
 
 ## Projects Overview
 
-### HW1: Odd-Even Sort using MPI
+### [HW1: Odd-Even Sort using MPI](https://github.com/weient/Parallel-Programming-2024/blob/main/hw1/hw1_112062520.pdf)
 - **Description**: Implementation of the Odd-Even Sort algorithm using MPI for process parallelism
 - **Technologies**: MPI
 - **Score**: 89.55/100
