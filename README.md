@@ -38,8 +38,9 @@ This repository contains implementations of various parallel programming assignm
 - **Technologies**: UCX
 - **Score**: 83/100
 
-### [Final Project: Image Filters Acceleration](https://github.com/weient/PP_final)
+### [Final Project: Image Filters Acceleration](https://github.com/weient/Parallel-Programming-2024/blob/main/final/PP_Final_Team8.pdf)
 - **Description**: Implementation of 6 image filters with parallel acceleration
+- **Project Link**: [link](https://github.com/weient/PP_final)
 - **Technologies**:
   - CUDA
   - OpenMP
