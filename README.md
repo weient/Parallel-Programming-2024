@@ -1,4 +1,4 @@
-# Parallel Programming Projects
+# Parallel Programming 2024 - NTHU
 
 This repository contains implementations of various parallel programming assignments focusing on different parallelization techniques and frameworks.
 
